@@ -1,0 +1,49 @@
+# Example GitHub Actions workflow using lockr
+# Add to: .github/workflows/deploy-secrets.yml
+
+name: Deploy Secrets
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Target environment'
+        required: true
+        type: choice
+        options:
+          - dev
+          - staging
+          - prod
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write   # For OIDC
+      contents: read
+
+    steps:
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::123456789012:role/github-actions
+          aws-region: us-east-1
+
+      - name: Install lockr
+        run: |
+          curl -LO https://github.com/devops-chris/lockr/releases/latest/download/lockr_linux_amd64.tar.gz
+          tar xzf lockr_linux_amd64.tar.gz
+          sudo mv lockr /usr/local/bin/
+
+      - name: Deploy secrets
+        env:
+          LOCKR_PREFIX: /myapp
+          LOCKR_ENV: ${{ inputs.environment }}
+        run: |
+          # Write secrets from GitHub Secrets
+          echo "${{ secrets.DATABASE_PASSWORD }}" | lockr write database/password --value -
+          echo "${{ secrets.API_KEY }}" | lockr write api/key --value -
+          
+          # Verify
+          lockr list --recursive
+
