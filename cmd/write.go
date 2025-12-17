@@ -65,7 +65,6 @@ func init() {
 func runWrite(cmd *cobra.Command, args []string) error {
 	path := buildPath(args[0])
 	var value string
-	var err error
 
 	// Determine value source: file > value flag > stdin prompt
 	switch {
@@ -92,6 +91,7 @@ func runWrite(cmd *cobra.Command, args []string) error {
 
 	default:
 		// Interactive prompt
+		var err error
 		value, err = promptSecureValue("Enter secret value: ")
 		if err != nil {
 			return fmt.Errorf("failed to read value: %w", err)

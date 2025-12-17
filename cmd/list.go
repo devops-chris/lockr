@@ -79,7 +79,7 @@ func runList(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("failed to list secrets: %w", err)
 	}
 
-	spinner.Stop()
+	_ = spinner.Stop()
 
 	if len(secrets) == 0 {
 		pterm.Warning.Println("No secrets found at " + path)
@@ -88,7 +88,10 @@ func runList(cmd *cobra.Command, args []string) error {
 
 	switch cfg.Output {
 	case "json":
-		data, _ := json.MarshalIndent(secrets, "", "  ")
+		data, err := json.MarshalIndent(secrets, "", "  ")
+		if err != nil {
+			return fmt.Errorf("failed to marshal JSON: %w", err)
+		}
 		fmt.Println(string(data))
 	default:
 		// Interactive fuzzy search mode
@@ -198,7 +201,7 @@ func runTableList(secrets []ssm.SecretMetadata, basePath string) error {
 		})
 	}
 
-	pterm.DefaultTable.WithHasHeader().WithBoxed().WithData(tableData).Render()
+	_ = pterm.DefaultTable.WithHasHeader().WithBoxed().WithData(tableData).Render()
 
 	fmt.Println()
 	pterm.Info.Printf("Total: %d secret(s)\n", len(secrets))

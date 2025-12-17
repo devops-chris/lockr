@@ -8,14 +8,14 @@ A simple, elegant CLI for managing secrets in AWS SSM Parameter Store.
 
 ## Features
 
-- 🔐 **Zero config** - Works out of the box with AWS managed KMS
-- 🔍 **Interactive fuzzy search** - Find secrets instantly with `lockr list`
-- 🔒 **Secure input** - Values never appear in shell history
-- 📊 **Pretty output** - Tables, spinners, and colors
-- 🤖 **Scriptable** - Quiet mode, JSON output, and proper exit codes
-- 🏷️ **Tagging support** - Organize secrets with metadata
-- 📁 **Path templating** - Configure prefix and environment patterns
-- 💻 **Cross-platform** - Works on macOS, Linux, and Windows
+- **Zero config** - Works out of the box with AWS managed KMS
+- **Interactive fuzzy search** - Find secrets instantly with `lockr list`
+- **Secure input** - Values never appear in shell history
+- **Pretty output** - Tables, spinners, and colors
+- **Scriptable** - Quiet mode, JSON output, and proper exit codes
+- **Tagging support** - Organize secrets with metadata
+- **Path templating** - Configure prefix and environment patterns
+- **Cross-platform** - Works on macOS, Linux, and Windows
 
 ## Installation
 

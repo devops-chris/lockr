@@ -84,7 +84,10 @@ func runRead(cmd *cobra.Command, args []string) error {
 		if len(secret.Tags) > 0 {
 			output["tags"] = secret.Tags
 		}
-		data, _ := json.MarshalIndent(output, "", "  ")
+		data, err := json.MarshalIndent(output, "", "  ")
+		if err != nil {
+			return fmt.Errorf("failed to marshal JSON: %w", err)
+		}
 		fmt.Println(string(data))
 	default:
 		// Pretty output
@@ -101,7 +104,7 @@ func runRead(cmd *cobra.Command, args []string) error {
 			{"Version", fmt.Sprintf("%d", secret.Version)},
 		}
 
-		pterm.DefaultTable.WithHasHeader().WithBoxed().WithData(tableData).Render()
+		_ = pterm.DefaultTable.WithHasHeader().WithBoxed().WithData(tableData).Render()
 
 		if len(secret.Tags) > 0 {
 			fmt.Println()
@@ -113,7 +116,7 @@ func runRead(cmd *cobra.Command, args []string) error {
 			for k, v := range secret.Tags {
 				tagData = append(tagData, []string{k, v})
 			}
-			pterm.DefaultTable.WithHasHeader().WithBoxed().WithData(tagData).Render()
+			_ = pterm.DefaultTable.WithHasHeader().WithBoxed().WithData(tagData).Render()
 		}
 		fmt.Println()
 	}
@@ -137,7 +140,7 @@ func interactiveSecretSearch() (string, error) {
 		return "", fmt.Errorf("failed to list secrets: %w", err)
 	}
 
-	spinner.Stop()
+	_ = spinner.Stop()
 
 	if len(secrets) == 0 {
 		pterm.Warning.Println("No secrets found")
