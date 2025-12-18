@@ -56,6 +56,8 @@ brews:
     homepage: "https://github.com/devops-chris/lockr"
     description: "A simple CLI for managing secrets in AWS SSM Parameter Store"
     license: "MIT"
+    # Skip Homebrew for pre-releases (alpha, beta, rc)
+    skip_upload: auto
     install: |
       bin.install "lockr"
     test: |
