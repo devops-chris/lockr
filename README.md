@@ -288,6 +288,47 @@ lockr write /myapp/prod/api-key --value $ApiKey
     AWS_REGION: us-east-1
 ```
 
+### Docker Build Secrets
+
+Use BuildKit's `--secret` mount, not `--build-arg` or a plain `ENV`/`ARG` in the Dockerfile — those persist the value in image history/layers. `lockr read -q` combined with process substitution keeps the value out of shell history and out of the image entirely:
+
+```bash
+DOCKER_BUILDKIT=1 docker build \
+  --secret id=api_key,src=<(lockr read /myapp/prod/api-key -q) \
+  -t myimage .
+```
+
+```dockerfile
+# syntax=docker/dockerfile:1
+RUN --mount=type=secret,id=api_key \
+    API_KEY="$(cat /run/secrets/api_key)" && \
+    ./configure-with-key.sh "$API_KEY"
+```
+
+The mount is only readable during that `RUN` step. It's never written to a layer and isn't part of the build cache, so `docker history` on the resulting image won't reveal it.
+
+Multiple secrets work the same way, one `--secret` flag per value:
+
+```bash
+DOCKER_BUILDKIT=1 docker build \
+  --secret id=api_key,src=<(lockr read /myapp/prod/api-key -q) \
+  --secret id=db_password,src=<(lockr read /myapp/prod/db-password -q) \
+  -t myimage .
+```
+
+**Caveat for `docker run`:** `docker run -e API_KEY=$(lockr read /myapp/prod/api-key -q) ...` works, but the resolved value is briefly visible as a process argument (`ps aux`) and shows up in `docker inspect`. For anything sensitive, prefer writing to a permission-locked temp file and using `--env-file`, then removing the file immediately after:
+
+```bash
+SECRETS_FILE=$(mktemp)
+chmod 600 "$SECRETS_FILE"
+echo "API_KEY=$(lockr read /myapp/prod/api-key -q)" >> "$SECRETS_FILE"
+echo "DB_PASSWORD=$(lockr read /myapp/prod/db-password -q)" >> "$SECRETS_FILE"
+
+docker run --env-file "$SECRETS_FILE" myimage
+
+rm -f "$SECRETS_FILE"
+```
+
 ## IAM Permissions
 
 Minimum required policy:
