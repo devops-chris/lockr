@@ -1,6 +1,6 @@
 module github.com/devops-chris/lockr
 
-go 1.25.5
+go 1.24.2
 
 require (
 	atomicgo.dev/cursor v0.2.0
@@ -11,7 +11,7 @@ require (
 	github.com/charmbracelet/huh v1.0.0
 	github.com/charmbracelet/huh/spinner v0.0.0-20260223110133-9dc45e34a40b
 	github.com/charmbracelet/lipgloss v1.1.0
-	github.com/devops-chris/clihq v0.1.0
+	github.com/devops-chris/clihq v0.1.1
 	github.com/lithammer/fuzzysearch v1.1.8
 	github.com/spf13/cobra v1.8.0
 	github.com/spf13/viper v1.18.2
