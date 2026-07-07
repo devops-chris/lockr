@@ -3,8 +3,10 @@ package cmd
 import (
 	"fmt"
 
+	"github.com/charmbracelet/huh"
+	"github.com/charmbracelet/huh/spinner"
+	"github.com/devops-chris/clihq/ui"
 	"github.com/devops-chris/lockr/internal/ssm"
-	"github.com/pterm/pterm"
 	"github.com/spf13/cobra"
 )
 
@@ -40,39 +42,44 @@ func runDelete(cmd *cobra.Command, args []string) error {
 	// Confirm deletion unless --force
 	if !deleteForce {
 		fmt.Println()
-		pterm.Warning.Printf("You are about to delete: %s\n", pterm.FgRed.Sprint(path))
+		fmt.Println(ui.Warningf("You are about to delete: %s", ui.Error(path)))
 		fmt.Println()
 
-		result, _ := pterm.DefaultInteractiveConfirm.
-			WithDefaultText("Are you sure you want to delete this secret?").
-			WithDefaultValue(false).
-			Show()
+		var confirmed bool
+		confirm := huh.NewConfirm().
+			Title("Are you sure you want to delete this secret?").
+			Value(&confirmed)
+		confirm.WithTheme(ui.Theme())
+		if err := confirm.Run(); err != nil {
+			return err
+		}
 
-		if !result {
-			pterm.Info.Println("Cancelled")
+		if !confirmed {
+			fmt.Println(ui.Info("Cancelled"))
 			return nil
 		}
 	}
 
-	// Show spinner while deleting
-	spinner, _ := pterm.DefaultSpinner.Start("Deleting secret...")
-
 	client, err := ssm.NewClient(cfg.Region)
 	if err != nil {
-		spinner.Fail("Failed to create SSM client")
 		return fmt.Errorf("failed to create SSM client: %w", err)
 	}
 
-	err = client.DeleteSecret(path)
-	if err != nil {
-		spinner.Fail("Failed to delete secret")
-		return fmt.Errorf("failed to delete secret: %w", err)
+	var deleteErr error
+	_ = spinner.New().
+		Title("Deleting secret...").
+		Action(func() {
+			deleteErr = client.DeleteSecret(path)
+		}).
+		Run()
+
+	if deleteErr != nil {
+		fmt.Println(ui.Error("Failed to delete secret"))
+		return fmt.Errorf("failed to delete secret: %w", deleteErr)
 	}
 
-	spinner.Success("Secret deleted")
-
 	fmt.Println()
-	pterm.Success.Printf("Deleted: %s\n", path)
+	fmt.Println(ui.Successf("Deleted: %s", path))
 	fmt.Println()
 
 	return nil

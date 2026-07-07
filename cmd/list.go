@@ -6,8 +6,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/charmbracelet/huh/spinner"
+	"github.com/devops-chris/clihq/ui"
 	"github.com/devops-chris/lockr/internal/ssm"
-	"github.com/pterm/pterm"
 	"github.com/spf13/cobra"
 )
 
@@ -64,25 +65,27 @@ func runList(cmd *cobra.Command, args []string) error {
 		listInteractive = true
 	}
 
-	// Show spinner while fetching
-	spinner, _ := pterm.DefaultSpinner.Start("Fetching secrets...")
-
 	client, err := ssm.NewClient(cfg.Region)
 	if err != nil {
-		spinner.Fail("Failed to create SSM client")
 		return fmt.Errorf("failed to create SSM client: %w", err)
 	}
 
-	secrets, err := client.ListSecrets(path, listRecursive)
-	if err != nil {
-		spinner.Fail("Failed to list secrets")
-		return fmt.Errorf("failed to list secrets: %w", err)
+	var secrets []ssm.SecretMetadata
+	var listErr error
+	_ = spinner.New().
+		Title("Fetching secrets...").
+		Action(func() {
+			secrets, listErr = client.ListSecrets(path, listRecursive)
+		}).
+		Run()
+
+	if listErr != nil {
+		fmt.Println(ui.Error("Failed to list secrets"))
+		return fmt.Errorf("failed to list secrets: %w", listErr)
 	}
 
-	_ = spinner.Stop()
-
 	if len(secrets) == 0 {
-		pterm.Warning.Println("No secrets found at " + path)
+		fmt.Println(ui.Warningf("No secrets found at %s", path))
 		return nil
 	}
 
@@ -94,6 +97,9 @@ func runList(cmd *cobra.Command, args []string) error {
 		}
 		fmt.Println(string(data))
 	default:
+		fmt.Println()
+		fmt.Println(ui.Banner("lockr", "secrets manager for AWS SSM Parameter Store"))
+
 		// Interactive fuzzy search mode
 		if listInteractive {
 			return runInteractiveList(secrets)
@@ -107,30 +113,21 @@ func runList(cmd *cobra.Command, args []string) error {
 }
 
 func runInteractiveList(secrets []ssm.SecretMetadata) error {
-	// Build options for fuzzy search
-	options := make([]string, len(secrets))
+	items := make([]pickItem, len(secrets))
 	for i, s := range secrets {
-		options[i] = s.Name
+		items[i] = pickItem{display: s.Name, search: s.Name, value: s.Name}
 	}
 
 	fmt.Println()
-	pterm.Info.Printf("Found %d secrets\n", len(secrets))
-	pterm.FgGray.Println("Type to filter • Enter to select • Ctrl+C to exit")
+	fmt.Println(ui.Infof("Found %d secrets", len(secrets)))
+	fmt.Println(ui.Subtle("Type to filter • ↑/↓ to move • Enter to select • Esc to exit"))
 	fmt.Println()
 
-	// Interactive fuzzy select
-	selected, err := pterm.DefaultInteractiveSelect.
-		WithOptions(options).
-		WithFilter(true).
-		WithMaxHeight(20).
-		Show()
-
-	if err != nil {
-		// User cancelled
+	selected, ok := runPicker(items, 20)
+	if !ok {
 		return nil
 	}
 
-	// Find the selected secret and show details
 	for _, s := range secrets {
 		if s.Name == selected {
 			fmt.Println()
@@ -143,19 +140,20 @@ func runInteractiveList(secrets []ssm.SecretMetadata) error {
 }
 
 func showSecretDetails(s ssm.SecretMetadata) {
-	pterm.DefaultBox.WithTitle("Selected").Println(s.Name)
-
+	fmt.Println(ui.SectionHeader("Selected"))
+	fmt.Println(ui.Highlight(s.Name))
 	fmt.Println()
-	pterm.FgGray.Println("Details:")
-	pterm.Println("  Type:     " + s.Type)
-	pterm.Println("  Version:  " + fmt.Sprintf("%d", s.Version))
+
+	fmt.Println(ui.Subtle("Details:"))
+	fmt.Println("  Type:     " + s.Type)
+	fmt.Println("  Version:  " + fmt.Sprintf("%d", s.Version))
 	if s.LastModified != nil {
-		pterm.Println("  Modified: " + s.LastModified.Local().Format("2006-01-02 15:04:05"))
+		fmt.Println("  Modified: " + s.LastModified.Local().Format("2006-01-02 15:04:05"))
 	}
 
 	fmt.Println()
-	pterm.FgGray.Println("To read the value:")
-	pterm.Println("  lockr read " + s.Name)
+	fmt.Println(ui.Subtle("To read the value:"))
+	fmt.Println("  lockr read " + s.Name)
 	fmt.Println()
 }
 
@@ -166,15 +164,11 @@ func runTableList(secrets []ssm.SecretMetadata, basePath string) error {
 	if basePath != "/" {
 		title = fmt.Sprintf("Secrets at %s", basePath)
 	}
+	fmt.Println(ui.SectionHeader(title))
+	fmt.Println()
 
-	pterm.DefaultHeader.WithBackgroundStyle(pterm.NewStyle(pterm.BgDarkGray)).
-		WithTextStyle(pterm.NewStyle(pterm.FgLightWhite)).
-		Println(title)
-
-	// Build table data
-	tableData := pterm.TableData{
-		{"Name", "Type", "Version", "Last Modified"},
-	}
+	headers := []string{"Name", "Type", "Version", "Last Modified"}
+	rows := make([][]string, 0, len(secrets))
 
 	for _, s := range secrets {
 		// Show relative path if it starts with the search path
@@ -193,22 +187,23 @@ func runTableList(secrets []ssm.SecretMetadata, basePath string) error {
 			lastMod = timeAgo(*s.LastModified)
 		}
 
-		tableData = append(tableData, []string{
-			pterm.FgCyan.Sprint(displayName),
+		rows = append(rows, []string{
+			ui.Highlight(displayName),
 			s.Type,
 			fmt.Sprintf("%d", s.Version),
 			lastMod,
 		})
 	}
 
-	_ = pterm.DefaultTable.WithHasHeader().WithBoxed().WithData(tableData).Render()
+	fmt.Println(ui.Table(headers, rows))
 
 	fmt.Println()
-	pterm.Info.Printf("Total: %d secret(s)\n", len(secrets))
+	fmt.Println(ui.Infof("Total: %d secret(s)", len(secrets)))
 
 	// Hint about interactive mode
 	if !listInteractive && len(secrets) > 10 {
-		pterm.FgGray.Println("\nTip: Use 'lockr list -i' for interactive fuzzy search")
+		fmt.Println()
+		fmt.Println(ui.Subtle("Tip: Use 'lockr list -i' for interactive fuzzy search"))
 	}
 	fmt.Println()
 

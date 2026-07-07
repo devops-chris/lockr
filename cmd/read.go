@@ -4,8 +4,9 @@ import (
 	"encoding/json"
 	"fmt"
 
+	"github.com/charmbracelet/huh/spinner"
+	"github.com/devops-chris/clihq/ui"
 	"github.com/devops-chris/lockr/internal/ssm"
-	"github.com/pterm/pterm"
 	"github.com/spf13/cobra"
 )
 
@@ -63,7 +64,7 @@ func runRead(cmd *cobra.Command, args []string) error {
 
 	secret, err := client.ReadSecret(path)
 	if err != nil {
-		pterm.Error.Println("Failed to read secret")
+		fmt.Println(ui.Error("Failed to read secret"))
 		return fmt.Errorf("failed to read secret: %w", err)
 	}
 
@@ -90,33 +91,28 @@ func runRead(cmd *cobra.Command, args []string) error {
 		}
 		fmt.Println(string(data))
 	default:
-		// Pretty output
 		fmt.Println()
-		pterm.DefaultHeader.WithBackgroundStyle(pterm.NewStyle(pterm.BgDarkGray)).
-			WithTextStyle(pterm.NewStyle(pterm.FgLightWhite)).
-			Println("Secret")
+		fmt.Println(ui.SectionHeader("Secret"))
+		fmt.Println()
 
-		tableData := pterm.TableData{
-			{"Property", "Value"},
-			{"Name", pterm.FgCyan.Sprint(secret.Name)},
-			{"Value", pterm.FgGreen.Sprint(secret.Value)},
+		rows := [][]string{
+			{"Name", secret.Name},
+			{"Value", ui.Highlight(secret.Value)},
 			{"Type", secret.Type},
 			{"Version", fmt.Sprintf("%d", secret.Version)},
 		}
-
-		_ = pterm.DefaultTable.WithHasHeader().WithBoxed().WithData(tableData).Render()
+		fmt.Println(ui.Table([]string{"Property", "Value"}, rows))
 
 		if len(secret.Tags) > 0 {
 			fmt.Println()
-			pterm.DefaultHeader.WithBackgroundStyle(pterm.NewStyle(pterm.BgDarkGray)).
-				WithTextStyle(pterm.NewStyle(pterm.FgLightWhite)).
-				Println("Tags")
+			fmt.Println(ui.SectionHeader("Tags"))
+			fmt.Println()
 
-			tagData := pterm.TableData{{"Key", "Value"}}
+			tagRows := make([][]string, 0, len(secret.Tags))
 			for k, v := range secret.Tags {
-				tagData = append(tagData, []string{k, v})
+				tagRows = append(tagRows, []string{k, v})
 			}
-			_ = pterm.DefaultTable.WithHasHeader().WithBoxed().WithData(tagData).Render()
+			fmt.Println(ui.Table([]string{"Key", "Value"}, tagRows))
 		}
 		fmt.Println()
 	}
@@ -124,48 +120,45 @@ func runRead(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-// interactiveSecretSearch fetches all secrets and lets user search/select
+// interactiveSecretSearch fetches all secrets and lets user fuzzy-search/select
 func interactiveSecretSearch() (string, error) {
-	spinner, _ := pterm.DefaultSpinner.Start("Fetching secrets...")
-
 	client, err := ssm.NewClient(cfg.Region)
 	if err != nil {
-		spinner.Fail("Failed to create SSM client")
 		return "", fmt.Errorf("failed to create SSM client: %w", err)
 	}
 
-	secrets, err := client.ListSecrets("/", true)
-	if err != nil {
-		spinner.Fail("Failed to list secrets")
-		return "", fmt.Errorf("failed to list secrets: %w", err)
+	var secrets []ssm.SecretMetadata
+	var listErr error
+	_ = spinner.New().
+		Title("Fetching secrets...").
+		Action(func() {
+			secrets, listErr = client.ListSecrets("/", true)
+		}).
+		Run()
+
+	if listErr != nil {
+		fmt.Println(ui.Error("Failed to list secrets"))
+		return "", fmt.Errorf("failed to list secrets: %w", listErr)
 	}
 
-	_ = spinner.Stop()
-
 	if len(secrets) == 0 {
-		pterm.Warning.Println("No secrets found")
+		fmt.Println(ui.Warning("No secrets found"))
 		return "", nil
 	}
 
-	// Build options
-	options := make([]string, len(secrets))
+	items := make([]pickItem, len(secrets))
 	for i, s := range secrets {
-		options[i] = s.Name
+		items[i] = pickItem{display: s.Name, search: s.Name, value: s.Name}
 	}
 
 	fmt.Println()
-	pterm.Info.Printf("Found %d secrets\n", len(secrets))
-	pterm.FgGray.Println("Type to filter • Enter to select • Ctrl+C to cancel")
+	fmt.Println(ui.Infof("Found %d secrets", len(secrets)))
+	fmt.Println(ui.Subtle("Type to filter • ↑/↓ to move • Enter to select • Esc to cancel"))
 	fmt.Println()
 
-	selected, err := pterm.DefaultInteractiveSelect.
-		WithOptions(options).
-		WithFilter(true).
-		WithMaxHeight(20).
-		Show()
-
-	if err != nil {
-		return "", nil // User cancelled
+	selected, ok := runPicker(items, 20)
+	if !ok {
+		return "", nil
 	}
 
 	return selected, nil

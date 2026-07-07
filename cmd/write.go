@@ -6,8 +6,10 @@ import (
 	"os"
 	"strings"
 
+	"github.com/charmbracelet/huh"
+	"github.com/charmbracelet/huh/spinner"
+	"github.com/devops-chris/clihq/ui"
 	"github.com/devops-chris/lockr/internal/ssm"
-	"github.com/pterm/pterm"
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
 )
@@ -72,7 +74,7 @@ func runWrite(cmd *cobra.Command, args []string) error {
 		// Read from file
 		data, err := os.ReadFile(writeFile)
 		if err != nil {
-			pterm.Error.Printf("Failed to read file: %s\n", writeFile)
+			fmt.Println(ui.Errorf("Failed to read file: %s", writeFile))
 			return fmt.Errorf("failed to read file: %w", err)
 		}
 		value = string(data)
@@ -92,14 +94,14 @@ func runWrite(cmd *cobra.Command, args []string) error {
 	default:
 		// Interactive prompt
 		var err error
-		value, err = promptSecureValue("Enter secret value: ")
+		value, err = promptSecureValue("Secret value")
 		if err != nil {
 			return fmt.Errorf("failed to read value: %w", err)
 		}
 	}
 
 	if value == "" {
-		pterm.Error.Println("Value cannot be empty")
+		fmt.Println(ui.Error("Value cannot be empty"))
 		return fmt.Errorf("value cannot be empty")
 	}
 
@@ -113,33 +115,33 @@ func runWrite(cmd *cobra.Command, args []string) error {
 		tags[parts[0]] = parts[1]
 	}
 
-	// Show spinner while writing
-	spinner, _ := pterm.DefaultSpinner.Start("Writing secret...")
-
-	// Create SSM client and write
 	client, err := ssm.NewClient(cfg.Region)
 	if err != nil {
-		spinner.Fail("Failed to create SSM client")
 		return fmt.Errorf("failed to create SSM client: %w", err)
 	}
 
-	err = client.WriteSecret(path, value, tags, writeOverwrite, cfg.KMSKey)
-	if err != nil {
-		spinner.Fail("Failed to write secret")
-		return fmt.Errorf("failed to write secret: %w", err)
+	var writeErr error
+	_ = spinner.New().
+		Title("Writing secret...").
+		Action(func() {
+			writeErr = client.WriteSecret(path, value, tags, writeOverwrite, cfg.KMSKey)
+		}).
+		Run()
+
+	if writeErr != nil {
+		fmt.Println(ui.Error("Failed to write secret"))
+		return fmt.Errorf("failed to write secret: %w", writeErr)
 	}
 
-	spinner.Success("Secret written successfully")
-
-	// Success output
+	fmt.Println(ui.Success("Secret written successfully"))
 	fmt.Println()
-	pterm.DefaultBox.WithTitle("Created").Println(path)
+	fmt.Println(ui.Subtle("Created: ") + ui.Highlight(path))
 
 	if len(tags) > 0 {
 		fmt.Println()
-		pterm.FgGray.Println("Tags:")
+		fmt.Println(ui.Subtle("Tags:"))
 		for k, v := range tags {
-			pterm.Println("  " + k + ": " + v)
+			fmt.Println("  " + k + ": " + v)
 		}
 	}
 
@@ -173,19 +175,24 @@ func buildPath(input string) string {
 	return "/" + strings.Join(parts, "/")
 }
 
-func promptSecureValue(prompt string) (string, error) {
-	pterm.Print(pterm.FgYellow.Sprint("? ") + prompt)
-
-	// Check if we're reading from a terminal
-	if term.IsTerminal(int(os.Stdin.Fd())) {
-		// Secure input (no echo)
-		value, err := term.ReadPassword(int(os.Stdin.Fd()))
-		fmt.Println() // newline after hidden input
-		return string(value), err
+func promptSecureValue(title string) (string, error) {
+	// Reading from a pipe/redirect - huh needs a real TTY, fall back to stdin
+	if !term.IsTerminal(int(os.Stdin.Fd())) {
+		return readStdin()
 	}
 
-	// Reading from pipe/redirect
-	return readStdin()
+	var value string
+	input := huh.NewInput().
+		Title(title).
+		EchoMode(huh.EchoModePassword).
+		Value(&value)
+	input.WithTheme(ui.Theme())
+
+	if err := input.Run(); err != nil {
+		return "", err
+	}
+
+	return value, nil
 }
 
 func readStdin() (string, error) {
